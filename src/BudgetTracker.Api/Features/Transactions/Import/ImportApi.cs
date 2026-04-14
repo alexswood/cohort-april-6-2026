@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using BudgetTracker.Api.AntiForgery;
 using BudgetTracker.Api.Auth;
 using BudgetTracker.Api.Infrastructure;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -10,7 +11,9 @@ public static class ImportApi
 {
     public static IEndpointRouteBuilder MapTransactionImportEndpoints(this IEndpointRouteBuilder routes)
     {
-        routes.MapPost("/import", ImportAsync);
+        routes.MapPost("/import", ImportAsync)
+            .DisableAntiforgery()
+            .AddEndpointFilter<ConditionalAntiforgeryFilter>();
 
         return routes;
     }
