@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import Header from '../shared/components/layout/Header';
 
 export async function loader() {
@@ -21,10 +22,16 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Features</h3>
-          <p className="text-gray-600">
-            Build transaction management, analytics, and reporting features.
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Transactions</h3>
+          <p className="text-gray-600 mb-4">
+            View and manage your imported transactions.
           </p>
+          <Link
+            to="/transactions"
+            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            View Transactions
+          </Link>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
