@@ -8,9 +8,11 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
+using NSubstitute;
 using Testcontainers.PostgreSql;
 
 namespace BudgetTracker.Api.Tests.Fixtures;
@@ -56,6 +58,8 @@ public class ApiFixture : WebApplicationFactory<IApiAssemblyMarker>, IAsyncLifet
 
             services.RemoveAll(typeof(DbContextOptions<BudgetTrackerContext>));
             services.RemoveAll(typeof(BudgetTrackerContext));
+            services.RemoveAll(typeof(IChatClient));
+            services.AddSingleton(Substitute.For<IChatClient>());
 
             services.AddDbContext<BudgetTrackerContext>(options =>
                 options.UseNpgsql(ConnectionString));
