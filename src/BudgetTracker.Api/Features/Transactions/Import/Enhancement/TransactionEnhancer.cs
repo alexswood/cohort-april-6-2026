@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 
 namespace BudgetTracker.Api.Features.Transactions.Import.Processing;
@@ -6,16 +8,12 @@ namespace BudgetTracker.Api.Features.Transactions.Import.Processing;
 public class TransactionEnhancer : ITransactionEnhancer
 {
     private readonly IChatClient _chatClient;
+    private readonly ILogger<TransactionEnhancer> _logger;
 
-    private static readonly List<string> PredefinedCategories = new()
-    {
-        "Groceries", "Dining", "Transport", "Utilities", "Entertainment",
-        "Healthcare", "Shopping", "Income", "Transfer", "Other"
-    };
-
-    public TransactionEnhancer(IChatClient chatClient)
+    public TransactionEnhancer(IChatClient chatClient, ILogger<TransactionEnhancer> logger)
     {
         _chatClient = chatClient;
+        _logger = logger;
     }
 
     public async Task<List<EnhancedTransactionDescription>> EnhanceDescriptionsAsync(
@@ -24,6 +22,13 @@ public class TransactionEnhancer : ITransactionEnhancer
         string userId,
         string? currentImportSessionHash = null)
     {
+        if (!descriptions.Any())
+        {
+            return new List<EnhancedTransactionDescription>();
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+
         try
         {
             var systemPrompt = BuildSystemPrompt();
@@ -35,11 +40,16 @@ public class TransactionEnhancer : ITransactionEnhancer
                     new ChatMessage(ChatRole.User, userMessage)
                 ]);
 
-            var result = ParseResponse(response.ToString() ?? string.Empty);
+            var content = response.Text ?? string.Empty;
+            var result = ParseResponse(content, descriptions);
+
+            _logger.LogInformation("AI processing completed in {ProcessingTime}ms", stopwatch.ElapsedMilliseconds);
+
             return result;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Failed to enhance transaction descriptions");
             return descriptions.Select(d => new EnhancedTransactionDescription
             {
                 OriginalDescription = d,
@@ -52,8 +62,6 @@ public class TransactionEnhancer : ITransactionEnhancer
 
     private string BuildSystemPrompt()
     {
-        var categoriesList = string.Join(", ", PredefinedCategories);
-
         return """
 Enhance transaction descriptions and suggest categories.
 
@@ -108,56 +116,59 @@ Respond ONLY with the JSON array, no additional text.
         return $"Account: {account}\n\nTransactions:\n{jsonArray}";
     }
 
-    private List<EnhancedTransactionDescription> ParseResponse(string response)
+    private List<EnhancedTransactionDescription> ParseResponse(
+        string content,
+        List<string> originalDescriptions)
     {
-        var result = new List<EnhancedTransactionDescription>();
-
         try
         {
-            var trimmed = response.Trim();
-            if (trimmed.StartsWith("```json"))
-            {
-                trimmed = trimmed["```json".Length..];
-            }
-            if (trimmed.StartsWith("```"))
-            {
-                trimmed = trimmed[3..];
-            }
-            if (trimmed.EndsWith("```"))
-            {
-                trimmed = trimmed[..^3];
-            }
+            var jsonContent = ExtractJsonFromCodeBlock(content);
+            var enhancedDescriptions = JsonSerializer.Deserialize<List<EnhancedTransactionDescription>>(
+                jsonContent,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-            var items = JsonSerializer.Deserialize<List<JsonElement>>(trimmed.Trim());
-
-            if (items == null) return result;
-
-            foreach (var item in items)
+            if (enhancedDescriptions?.Count == originalDescriptions.Count)
             {
-                var enhanced = new EnhancedTransactionDescription
-                {
-                    OriginalDescription = item.TryGetProperty("originalDescription", out var orig)
-                        ? orig.GetString() ?? string.Empty
-                        : string.Empty,
-                    EnhancedDescription = item.TryGetProperty("enhancedDescription", out var enh)
-                        ? enh.GetString() ?? string.Empty
-                        : string.Empty,
-                    SuggestedCategory = item.TryGetProperty("suggestedCategory", out var cat)
-                        ? cat.GetString()
-                        : null,
-                    ConfidenceScore = item.TryGetProperty("confidenceScore", out var conf)
-                        ? conf.GetDouble()
-                        : 0.0
-                };
-
-                result.Add(enhanced);
+                return enhancedDescriptions;
             }
         }
-        catch
+        catch (JsonException ex)
         {
-            return result;
+            _logger.LogWarning(ex, "Failed to parse AI response as JSON: {Content}", content);
+        }
+        catch (FormatException ex)
+        {
+            _logger.LogWarning(ex, "Failed to extract JSON from AI response");
         }
 
-        return result;
+        _logger.LogWarning("AI response format was invalid, returning original descriptions");
+
+        return originalDescriptions.Select(d => new EnhancedTransactionDescription
+        {
+            OriginalDescription = d,
+            EnhancedDescription = d,
+            SuggestedCategory = null,
+            ConfidenceScore = 0.0
+        }).ToList();
+    }
+
+    private static string ExtractJsonFromCodeBlock(string input)
+    {
+        // Look for content between ```json and ``` markers
+        var match = Regex.Match(input, @"```json\s*([\s\S]*?)\s*```");
+
+        if (match.Success)
+        {
+            return match.Groups[1].Value;
+        }
+
+        // Try to find a JSON array directly
+        var arrayMatch = Regex.Match(input, @"\[[\s\S]*\]");
+        if (arrayMatch.Success)
+        {
+            return arrayMatch.Value;
+        }
+
+        throw new FormatException("Could not extract JSON from the input string");
     }
 }
