@@ -45,6 +45,9 @@ builder.Services.AddDbContext<BudgetTrackerContext>(options =>
 // Add CSV Import Service
 builder.Services.AddScoped<CsvImporter>();
 
+// Add Transaction Enhancer
+builder.Services.AddScoped<ITransactionEnhancer, TransactionEnhancer>();
+
 // Configure Azure AI
 builder.Services.Configure<AzureAiConfiguration>(
     builder.Configuration.GetSection(AzureAiConfiguration.SectionName));
