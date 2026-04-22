@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../shared/contexts/ToastContext';
 import { apiClient } from '../../../api';
 import { transactionsApi } from '../api';
-import type { ImportResult } from '../types';
+import type { ImportResult, EnhanceImportResult } from '../types';
 import { LoadingSpinner } from '../../../shared/components/LoadingSpinner';
+
+type Step = 'upload' | 'preview' | 'complete';
 
 interface FileUploadProps {
   className?: string;
@@ -17,6 +19,10 @@ function FileUpload({ className = '' }: FileUploadProps) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [account, setAccount] = useState('');
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [currentStep, setCurrentStep] = useState<Step>('upload');
+  const [minConfidenceScore, setMinConfidenceScore] = useState(0.7);
+  const [enhanceResult, setEnhanceResult] = useState<EnhanceImportResult | null>(null);
+  const [currentPhase, setCurrentPhase] = useState<'uploading' | 'parsing' | 'enhancing' | 'complete'>('uploading');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { showSuccess, showError } = useToast();
@@ -92,6 +98,7 @@ function FileUpload({ className = '' }: FileUploadProps) {
     setIsUploading(true);
     setUploadProgress(0);
     setImportResult(null);
+    setCurrentPhase('uploading');
 
     try {
       const formData = new FormData();
@@ -101,40 +108,83 @@ function FileUpload({ className = '' }: FileUploadProps) {
       const result = await transactionsApi.importTransactions({
         formData,
         onUploadProgress: (progressEvent) => {
-          const progress = progressEvent.total
-            ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
-            : 0;
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           setUploadProgress(progress);
+
+          // Update phase based on progress
+          if (progress < 30) {
+            setCurrentPhase('uploading');
+          } else if (progress < 70) {
+            setCurrentPhase('parsing');
+          } else if (progress < 100) {
+            setCurrentPhase('enhancing');
+          } else {
+            setCurrentPhase('complete');
+          }
         }
       });
 
       setImportResult(result);
-      showSuccess(`Successfully imported ${result.importedCount} transactions`);
+      setCurrentStep('preview');
 
-      setTimeout(() => {
-        setSelectedFile(null);
-        setAccount('');
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-        navigate('/transactions');
-      }, 3000);
-
+      showSuccess(`Imported ${result.importedCount} transactions - review AI enhancements below`);
     } catch (error) {
       console.error('Import error:', error);
-      const errorMessage = error && typeof error === 'object' && 'message' in error
-        ? (error as Error).message
-        : 'Failed to import the CSV file';
+      let errorMessage = 'Failed to import the CSV file';
+      if (error && typeof error === 'object' && 'message' in error) {
+        errorMessage = (error as Error).message;
+      }
       showError('Import Failed', errorMessage);
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
+      setCurrentPhase('uploading');
     }
-  }, [selectedFile, account, showError, showSuccess, navigate]);
+  }, [selectedFile, account, showError, showSuccess]);
+
+  const handleEnhance = useCallback(async (applyEnhancements: boolean) => {
+    if (!importResult) return;
+
+    setIsUploading(true);
+
+    try {
+      const result = await transactionsApi.enhanceImport({
+        importSessionHash: importResult.importSessionHash,
+        enhancements: importResult.enhancements,
+        minConfidenceScore,
+        applyEnhancements
+      });
+
+      setEnhanceResult(result);
+      setCurrentStep('complete');
+
+      if (applyEnhancements) {
+        showSuccess(
+          `Enhanced ${result.enhancedCount} of ${result.totalTransactions} transactions`
+        );
+      } else {
+        showSuccess('Import complete - original descriptions kept');
+      }
+
+      // Redirect after delay
+      setTimeout(() => {
+        navigate('/transactions');
+      }, 4000);
+    } catch (error) {
+      showError('Enhancement Failed', 'Failed to apply enhancements');
+      console.error('Enhancement error:', error);
+    } finally {
+      setIsUploading(false);
+    }
+  }, [importResult, minConfidenceScore, showSuccess, showError, navigate]);
 
   const handleClearFile = useCallback(() => {
     setSelectedFile(null);
     setImportResult(null);
+    setEnhanceResult(null);
+    setCurrentStep('upload');
+    setCurrentPhase('uploading');
+    setUploadProgress(0);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
