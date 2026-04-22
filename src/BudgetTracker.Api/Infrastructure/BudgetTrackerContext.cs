@@ -36,9 +36,9 @@ public class BudgetTrackerContext : IdentityDbContext<ApplicationUser>
             .HasDefaultValueSql("gen_random_uuid()");
 
         modelBuilder.Entity<Transaction>()
-            .HasOne<ApplicationUser>()
-            .WithMany()
-            .HasForeignKey(t => t.UserId)
-            .HasPrincipalKey(u => u.Id);
+            .Property(t => t.UserId)
+            .IsRequired();
+
+        // No FK to AspNetUsers — UserId supports both Identity users and static API key users
     }
 }
