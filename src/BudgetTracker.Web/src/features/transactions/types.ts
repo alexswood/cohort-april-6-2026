@@ -31,6 +31,16 @@ export interface ImportTransactionsParams {
   onUploadProgress?: (progressEvent: ProgressEvent) => void;
 }
 
+export interface TransactionEnhancement {
+  transactionId: string;
+  importSessionHash: string;
+  transactionIndex: number;
+  originalDescription: string;
+  enhancedDescription: string;
+  suggestedCategory?: string;
+  confidenceScore: number;
+}
+
 export interface ImportResult {
   totalRows: number;
   importedCount: number;
@@ -38,4 +48,20 @@ export interface ImportResult {
   errors: string[];
   sourceFile: string;
   importedAt: string;
+  importSessionHash: string;
+  enhancements: TransactionEnhancement[];
+}
+
+export interface EnhanceImportRequest {
+  importSessionHash: string;
+  enhancements: TransactionEnhancement[];
+  minConfidenceScore: number;
+  applyEnhancements: boolean;
+}
+
+export interface EnhanceImportResult {
+  importSessionHash: string;
+  totalTransactions: number;
+  enhancedCount: number;
+  skippedCount: number;
 }
