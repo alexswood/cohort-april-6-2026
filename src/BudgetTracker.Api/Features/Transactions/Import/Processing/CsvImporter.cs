@@ -3,13 +3,21 @@ using System.Text;
 using CsvHelper;
 using CsvHelper.Configuration;
 using BudgetTracker.Api.Features.Transactions;
+using BudgetTracker.Api.Features.Transactions.Import.Detection;
+using BudgetTracker.Api.Features.Transactions.List;
 
 namespace BudgetTracker.Api.Features.Transactions.Import.Processing;
 
 public class CsvImporter
 {
-    public async Task<(ImportResult Result, List<Transaction> Transactions)> ParseCsvAsync(
-        Stream csvStream, string sourceFileName, string userId, string account)
+    public async Task<(ImportResult Result, List<Transaction> Transactions)> ParseCsvAsync(Stream csvStream,
+        string sourceFileName, string userId, string account)
+    {
+        return await ParseCsvAsync(csvStream, sourceFileName, userId, account, null);
+    }
+
+    public async Task<(ImportResult Result, List<Transaction> Transactions)> ParseCsvAsync(Stream csvStream,
+        string sourceFileName, string userId, string account, CsvStructureDetectionResult? detectionResult)
     {
         var result = new ImportResult
         {
@@ -26,7 +34,8 @@ public class CsvImporter
             {
                 HasHeaderRecord = true,
                 MissingFieldFound = null,
-                BadDataFound = null
+                BadDataFound = null,
+                Delimiter = detectionResult?.Delimiter ?? ","
             });
 
             var rowNumber = 0;
@@ -38,7 +47,7 @@ public class CsvImporter
 
                 try
                 {
-                    var transaction = ParseTransactionRow(record);
+                    var transaction = ParseTransactionRow(record, detectionResult);
                     if (transaction != null)
                     {
                         transaction.UserId = userId;
@@ -72,17 +81,26 @@ public class CsvImporter
         }
     }
 
-    private Transaction? ParseTransactionRow(dynamic record)
+    private Transaction? ParseTransactionRow(dynamic record, CsvStructureDetectionResult? detectionResult = null)
     {
         try
         {
             var recordDict = (IDictionary<string, object>)record;
 
-            var description = GetColumnValue(recordDict, "Description", "Memo", "Details");
-            var dateStr = GetColumnValue(recordDict, "Date", "Transaction Date", "Posting Date");
-            var amountStr = GetColumnValue(recordDict, "Amount", "Transaction Amount", "Debit", "Credit");
-            var balanceStr = GetColumnValue(recordDict, "Balance", "Running Balance", "Account Balance");
-            var category = GetColumnValue(recordDict, "Category", "Type", "Transaction Type");
+            var description = GetColumnValueWithDetection(recordDict, detectionResult, "Description",
+                "Description", "Memo", "Details");
+
+            var dateStr = GetColumnValueWithDetection(recordDict, detectionResult, "Date",
+                "Date", "Transaction Date", "Posting Date");
+
+            var amountStr = GetColumnValueWithDetection(recordDict, detectionResult, "Amount",
+                "Amount", "Transaction Amount", "Debit", "Credit");
+
+            var balanceStr = GetColumnValueWithDetection(recordDict, detectionResult, "Balance",
+                "Balance", "Running Balance", "Account Balance");
+
+            var category = GetColumnValueWithDetection(recordDict, detectionResult, "Category",
+                "Category", "Type", "Transaction Type");
 
             if (string.IsNullOrWhiteSpace(description))
                 throw new ArgumentException("Description is required");
@@ -93,15 +111,20 @@ public class CsvImporter
             if (string.IsNullOrWhiteSpace(amountStr))
                 throw new ArgumentException("Amount is required");
 
-            if (!TryParseDate(dateStr, out var date))
+            if (!TryParseDate(dateStr, out var date, null, detectionResult))
                 throw new ArgumentException($"Invalid date format: {dateStr}");
 
-            if (!TryParseAmount(amountStr, out var amount))
+            if (!TryParseAmountWithCulture(amountStr, detectionResult, out var amount))
                 throw new ArgumentException($"Invalid amount format: {amountStr}");
 
             decimal? balance = null;
-            if (!string.IsNullOrWhiteSpace(balanceStr) && TryParseAmount(balanceStr, out var parsedBalance))
-                balance = parsedBalance;
+            if (!string.IsNullOrWhiteSpace(balanceStr))
+            {
+                if (TryParseAmountWithCulture(balanceStr, detectionResult, out var parsedBalance))
+                {
+                    balance = parsedBalance;
+                }
+            }
 
             return new Transaction
             {
@@ -120,6 +143,22 @@ public class CsvImporter
         }
     }
 
+    private static string? GetColumnValueWithDetection(IDictionary<string, object> record,
+        CsvStructureDetectionResult? detectionResult, string mappingKey, params string[] fallbackColumnNames)
+    {
+        if (detectionResult?.ColumnMappings != null &&
+            detectionResult.ColumnMappings.TryGetValue(mappingKey, out var detectedColumnName) &&
+            !string.IsNullOrEmpty(detectedColumnName))
+        {
+            if (record.TryGetValue(detectedColumnName, out var detectedValue) && detectedValue != null)
+            {
+                return detectedValue.ToString()?.Trim();
+            }
+        }
+
+        return GetColumnValue(record, fallbackColumnNames);
+    }
+
     private static string? GetColumnValue(IDictionary<string, object> record, params string[] columnNames)
     {
         foreach (var columnName in columnNames)
@@ -131,22 +170,66 @@ public class CsvImporter
         return null;
     }
 
-    private static bool TryParseDate(string dateStr, out DateTime date)
+    private bool TryParseDate(string dateStr, out DateTime date, string? detectedFormat = null, CsvStructureDetectionResult? detectionResult = null)
     {
+        date = default;
+
+        CultureInfo culture = CultureInfo.InvariantCulture;
+        if (!string.IsNullOrEmpty(detectionResult?.CultureCode))
+        {
+            try
+            {
+                culture = new CultureInfo(detectionResult.CultureCode);
+            }
+            catch
+            {
+                culture = CultureInfo.InvariantCulture;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(detectedFormat))
+        {
+            if (DateTime.TryParseExact(dateStr.Trim(), detectedFormat, culture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out date))
+            {
+                return true;
+            }
+        }
+
+        if (DateTime.TryParse(dateStr.Trim(), culture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out date))
+        {
+            return true;
+        }
+
         return DateTime.TryParse(dateStr.Trim(), CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out date);
     }
 
-    private static bool TryParseAmount(string amountStr, out decimal amount)
+    private static bool TryParseAmountWithCulture(string amountStr, CsvStructureDetectionResult? detectionResult, out decimal amount)
     {
         amount = 0;
 
         if (string.IsNullOrWhiteSpace(amountStr))
             return false;
 
-        var cleanAmount = amountStr.Trim()
-            .Replace("$", "").Replace("€", "").Replace("£", "").Replace("¥", "").Replace("R$", "").Trim();
+        var cleanAmount = amountStr.Trim();
 
-        return decimal.TryParse(cleanAmount, NumberStyles.Currency, CultureInfo.InvariantCulture, out amount);
+        cleanAmount = cleanAmount.Replace("$", "").Replace("€", "").Replace("£", "").Replace("¥", "").Replace("R$", "").Trim();
+
+        CultureInfo culture = CultureInfo.InvariantCulture;
+        if (!string.IsNullOrEmpty(detectionResult?.CultureCode))
+        {
+            try
+            {
+                culture = new CultureInfo(detectionResult.CultureCode);
+            }
+            catch
+            {
+                culture = CultureInfo.InvariantCulture;
+            }
+        }
+
+        return decimal.TryParse(cleanAmount, NumberStyles.Currency, culture, out amount);
     }
 }

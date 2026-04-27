@@ -3,6 +3,7 @@ using BudgetTracker.Api.AntiForgery;
 using BudgetTracker.Api.Auth;
 using BudgetTracker.Api.Infrastructure;
 using BudgetTracker.Api.Features.Transactions.Import.Processing;
+using BudgetTracker.Api.Features.Transactions.Import.Detection;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -30,7 +31,8 @@ public static class ImportApi
         CsvImporter csvImporter,
         ITransactionEnhancer enhancer,
         BudgetTrackerContext context,
-        ClaimsPrincipal claimsPrincipal)
+        ClaimsPrincipal claimsPrincipal,
+        ICsvStructureDetector detectionService)
     {
         var validationResult = ValidateFileInput(file, account);
         if (validationResult != null)
@@ -43,7 +45,23 @@ public static class ImportApi
             var userId = claimsPrincipal.GetUserId();
 
             using var stream = file.OpenReadStream();
-            var (result, transactions) = await csvImporter.ParseCsvAsync(stream, file.FileName, userId, account);
+
+            var detectionResult = await detectionService.DetectStructureAsync(stream);
+
+            if (detectionResult.ConfidenceScore < 85)
+            {
+                var errorMessage = detectionResult.DetectionMethod == DetectionMethod.AI
+                    ? "Unable to automatically detect CSV structure using AI analysis. Please ensure your CSV contains Date, Description, and Amount columns with recognizable headers."
+                    : "Unable to automatically detect CSV structure. Please ensure your CSV file follows a standard banking format.";
+
+                return TypedResults.BadRequest(errorMessage);
+            }
+
+            stream.Position = 0;
+            var (result, transactions) = await csvImporter.ParseCsvAsync(stream, file.FileName, userId, account, detectionResult);
+
+            result.DetectionMethod = detectionResult.DetectionMethod.ToString();
+            result.DetectionConfidence = detectionResult.ConfidenceScore;
 
             if (!transactions.Any())
             {

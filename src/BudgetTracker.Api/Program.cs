@@ -3,6 +3,7 @@ using BudgetTracker.Api.AntiForgery;
 using BudgetTracker.Api.Auth;
 using BudgetTracker.Api.Features.Transactions;
 using BudgetTracker.Api.Features.Transactions.Import.Processing;
+using BudgetTracker.Api.Features.Transactions.Import.Detection;
 using BudgetTracker.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
@@ -47,6 +48,11 @@ builder.Services.AddScoped<CsvImporter>();
 
 // Add Transaction Enhancer
 builder.Services.AddScoped<ITransactionEnhancer, TransactionEnhancer>();
+
+// Add CSV detection services
+builder.Services.AddScoped<ICsvStructureDetector, CsvStructureDetector>();
+builder.Services.AddScoped<ICsvDetector, CsvDetector>();
+builder.Services.AddScoped<ICsvAnalyzer, CsvAnalyzer>();
 
 // Configure Azure AI
 builder.Services.Configure<AzureAiConfiguration>(

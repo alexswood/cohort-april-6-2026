@@ -10,4 +10,6 @@ public class ImportResult
     public string ImportSessionHash { get; set; } = string.Empty;
     public DateTime ImportedAt { get; set; }
     public List<TransactionEnhancementResult> Enhancements { get; set; } = new();
+    public string? DetectionMethod { get; set; }
+    public double DetectionConfidence { get; set; }
 }
