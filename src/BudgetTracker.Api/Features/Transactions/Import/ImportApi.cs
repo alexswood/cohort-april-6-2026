@@ -73,18 +73,14 @@ public static class ImportApi
             var descriptions = transactions.Select(t => t.Description).ToList();
             var enhancements = await enhancer.EnhanceDescriptionsAsync(descriptions, account, userId);
 
-            var enhancementResults = new List<TransactionEnhancementResult>();
-
-            for (var i = 0; i < transactions.Count; i++)
+            var enhancementResults = transactions.Select((transaction, i) =>
             {
-                var transaction = transactions[i];
-                var enhancement = enhancements.FirstOrDefault(e =>
-                    e.OriginalDescription == transaction.Description) ?? enhancements[i];
-
-                // Set session hash for tracking
                 transaction.ImportSessionHash = sessionHash;
+                var enhancement = enhancements[i].OriginalDescription == transaction.Description
+                    ? enhancements[i]
+                    : enhancements.FirstOrDefault(e => e.OriginalDescription == transaction.Description) ?? enhancements[i];
 
-                enhancementResults.Add(new TransactionEnhancementResult
+                return new TransactionEnhancementResult
                 {
                     TransactionId = transaction.Id,
                     ImportSessionHash = sessionHash,
@@ -93,8 +89,8 @@ public static class ImportApi
                     EnhancedDescription = enhancement.EnhancedDescription,
                     SuggestedCategory = enhancement.SuggestedCategory,
                     ConfidenceScore = enhancement.ConfidenceScore
-                });
-            }
+                };
+            }).ToList();
 
             await context.Transactions.AddRangeAsync(transactions);
             await context.SaveChangesAsync();
