@@ -57,3 +57,19 @@ Content-Type: text/csv
 
 < ./samples/generic-bank-sample.csv
 --WebAppBoundary--
+
+### Test image import with a bank statement screenshot
+POST http://localhost:5295/api/transactions/import
+X-API-Key: test-key-user1
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="account"
+
+Checking Account
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="bank-statement.png"
+Content-Type: image/png
+
+< ./samples/bank-statement.png
+--WebAppBoundary--
