@@ -73,7 +73,7 @@ public static class ImportApi
             var sessionHash = GenerateSessionHash(file.FileName, DateTime.UtcNow);
 
             var descriptions = transactions.Select(t => t.Description).ToList();
-            var enhancements = await enhancer.EnhanceDescriptionsAsync(descriptions, account, userId);
+            var enhancements = await enhancer.EnhanceDescriptionsAsync(descriptions, account, userId, sessionHash);
 
             var enhancementResults = transactions.Select((transaction, i) =>
             {

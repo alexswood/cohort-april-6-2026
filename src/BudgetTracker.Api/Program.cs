@@ -1,6 +1,7 @@
 using Azure.AI.OpenAI;
 using BudgetTracker.Api.AntiForgery;
 using BudgetTracker.Api.Auth;
+using BudgetTracker.Api.Features.Intelligence.Search;
 using BudgetTracker.Api.Features.Transactions;
 using BudgetTracker.Api.Features.Transactions.Import.Processing;
 using BudgetTracker.Api.Features.Transactions.Import.Detection;
@@ -8,6 +9,7 @@ using BudgetTracker.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
+using Pgvector.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,7 +43,8 @@ builder.Services.AddSwaggerGen(c =>
 
 // Add Entity Framework
 builder.Services.AddDbContext<BudgetTrackerContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"),
+        o => o.UseVector()));
 
 // Add CSV Import Service
 builder.Services.AddScoped<CsvImporter>();
@@ -75,6 +78,30 @@ builder.Services.AddSingleton<IChatClient>(sp =>
         .GetChatClient(config.DeploymentName)
         .AsIChatClient();
 });
+
+// Register IEmbeddingGenerator using Microsoft.Extensions.AI
+builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp =>
+{
+    var config = sp.GetRequiredService<IOptions<AzureAiConfiguration>>().Value;
+
+    if (string.IsNullOrEmpty(config.Endpoint) || string.IsNullOrEmpty(config.ApiKey))
+    {
+        throw new InvalidOperationException(
+            "Azure AI configuration is missing. Please configure Endpoint and ApiKey in user secrets.");
+    }
+
+    return new AzureOpenAIClient(
+            new Uri(config.Endpoint),
+            new System.ClientModel.ApiKeyCredential(config.ApiKey))
+        .GetEmbeddingClient(config.EmbeddingDeploymentName)
+        .AsIEmbeddingGenerator();
+});
+
+// Register embedding service for vector generation
+builder.Services.AddScoped<IAzureEmbeddingService, AzureEmbeddingService>();
+
+// Register background service for automatic embedding generation
+builder.Services.AddHostedService<EmbeddingBackgroundService>();
 
 // Add Auth with multiple schemes
 builder.Services.AddAuthorization(options =>

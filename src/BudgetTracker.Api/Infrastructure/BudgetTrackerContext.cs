@@ -2,6 +2,7 @@ using BudgetTracker.Api.Auth;
 using BudgetTracker.Api.Features.Transactions;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Pgvector.EntityFrameworkCore;
 
 namespace BudgetTracker.Api.Infrastructure;
 
@@ -18,27 +19,46 @@ public class BudgetTrackerContext : IdentityDbContext<ApplicationUser>
     {
         base.OnModelCreating(modelBuilder);
 
-        // Add indexes for better query performance
-        modelBuilder.Entity<Transaction>()
-            .HasIndex(t => t.Date);
+        // Enable pgvector extension
+        modelBuilder.HasPostgresExtension("vector");
 
-        modelBuilder.Entity<Transaction>()
-            .HasIndex(t => t.UserId);
+        // Configure Transaction entity
+        modelBuilder.Entity<Transaction>(entity =>
+        {
+            entity.HasKey(e => e.Id);
 
-        modelBuilder.Entity<Transaction>()
-            .HasIndex(t => t.ImportedAt);
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("gen_random_uuid()");
 
-        modelBuilder.Entity<Transaction>()
-            .HasKey(e => e.Id);
+            entity.HasIndex(e => e.UserId)
+                .HasDatabaseName("IX_Transactions_UserId");
 
-        modelBuilder.Entity<Transaction>()
-            .Property(e => e.Id)
-            .HasDefaultValueSql("gen_random_uuid()");
+            // Composite index for RAG context queries (most selective first)
+            entity.HasIndex(e => new { e.UserId, e.Account, e.Date })
+                .HasDatabaseName("IX_Transactions_RagContext")
+                .IsDescending(false, false, true); // Date descending for recent first
 
-        modelBuilder.Entity<Transaction>()
-            .Property(t => t.UserId)
-            .IsRequired();
+            // Category index for context analysis (with filter for non-null values)
+            entity.HasIndex(e => e.Category)
+                .HasDatabaseName("IX_Transactions_Category")
+                .HasFilter("\"Category\" IS NOT NULL");
 
-        // No FK to AspNetUsers — UserId supports both Identity users and static API key users
+            // Add existing indexes
+            entity.HasIndex(e => e.Date);
+            entity.HasIndex(e => e.ImportedAt);
+
+            // Configure vector column with explicit dimensions (1536 for text-embedding-3-small)
+            entity.Property(e => e.Embedding)
+                .HasColumnType("vector(1536)");
+
+            // Vector index for semantic search (HNSW for fast similarity search)
+            entity.HasIndex(e => e.Embedding)
+                .HasDatabaseName("IX_Transactions_Embedding")
+                .HasMethod("hnsw")
+                .HasOperators("vector_cosine_ops");
+
+            entity.Property(t => t.UserId)
+                .IsRequired();
+        });
     }
 }
