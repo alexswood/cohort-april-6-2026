@@ -139,3 +139,30 @@ Date,Description,Amount,Balance
 2025-01-19,VODAFONE PORT DD,-35.99,1111.94
 --WebAppBoundary--
 ```
+
+### Test coffee-related query
+POST http://localhost:5295/api/query/ask
+X-API-Key: test-key-user1
+Content-Type: application/json
+
+{
+  "query": "Show me all my coffee purchases"
+}
+
+### Test expense analysis
+POST http://localhost:5295/api/query/ask
+X-API-Key: test-key-user1
+Content-Type: application/json
+
+{
+  "query": "What was my biggest expense this month?"
+}
+
+### Test category analysis
+POST http://localhost:5295/api/query/ask
+X-API-Key: test-key-user1
+Content-Type: application/json
+
+{
+  "query": "How much did I spend on entertainment?"
+}

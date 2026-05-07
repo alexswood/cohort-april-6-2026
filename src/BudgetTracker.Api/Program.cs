@@ -2,6 +2,7 @@ using Azure.AI.OpenAI;
 using BudgetTracker.Api.AntiForgery;
 using BudgetTracker.Api.Auth;
 using BudgetTracker.Api.Features.Intelligence.Search;
+using BudgetTracker.Api.Features.Intelligence.Query;
 using BudgetTracker.Api.Features.Transactions;
 using BudgetTracker.Api.Features.Transactions.Import.Processing;
 using BudgetTracker.Api.Features.Transactions.Import.Detection;
@@ -103,6 +104,10 @@ builder.Services.AddScoped<IAzureEmbeddingService, AzureEmbeddingService>();
 // Register background service for automatic embedding generation
 builder.Services.AddHostedService<EmbeddingBackgroundService>();
 
+// Register semantic search and query assistant services
+builder.Services.AddScoped<ISemanticSearchService, SemanticSearchService>();
+builder.Services.AddScoped<IQueryAssistantService, QueryAssistantService>();
+
 // Add Auth with multiple schemes
 builder.Services.AddAuthorization(options =>
 {
@@ -193,6 +198,7 @@ app
     .MapGroup("/api")
     .MapAntiForgeryEndpoints()
     .MapAuthEndpoints()
-    .MapTransactionEndpoints();
+    .MapTransactionEndpoints()
+    .MapQueryEndpoints();
 
 app.Run();
