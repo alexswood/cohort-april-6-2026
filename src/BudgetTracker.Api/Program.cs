@@ -1,6 +1,8 @@
 using Azure.AI.OpenAI;
 using BudgetTracker.Api.AntiForgery;
 using BudgetTracker.Api.Auth;
+using BudgetTracker.Api.Features.Intelligence;
+using BudgetTracker.Api.Features.Intelligence.Recommendations;
 using BudgetTracker.Api.Features.Intelligence.Search;
 using BudgetTracker.Api.Features.Intelligence.Query;
 using BudgetTracker.Api.Features.Transactions;
@@ -108,6 +110,11 @@ builder.Services.AddHostedService<EmbeddingBackgroundService>();
 builder.Services.AddScoped<ISemanticSearchService, SemanticSearchService>();
 builder.Services.AddScoped<IQueryAssistantService, QueryAssistantService>();
 
+// Register recommendation services
+builder.Services.AddScoped<IRecommendationRepository, RecommendationAgent>();
+builder.Services.AddScoped<IRecommendationWorker, RecommendationProcessor>();
+builder.Services.AddHostedService<RecommendationBackgroundService>();
+
 // Add Auth with multiple schemes
 builder.Services.AddAuthorization(options =>
 {
@@ -199,6 +206,6 @@ app
     .MapAntiForgeryEndpoints()
     .MapAuthEndpoints()
     .MapTransactionEndpoints()
-    .MapQueryEndpoints();
+    .MapIntelligenceEndpoints();
 
 app.Run();
